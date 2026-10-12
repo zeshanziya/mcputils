@@ -27,7 +27,7 @@ func New(path string) *Logger {
 }
 
 func (l *Logger) Append(scope, trigger, server, state string, sweptProjects int) error {
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
 		return err
 	}
 
@@ -44,7 +44,7 @@ func (l *Logger) Append(scope, trigger, server, state string, sweptProjects int)
 		return err
 	}
 
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
