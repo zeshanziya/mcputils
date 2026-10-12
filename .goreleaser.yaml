@@ -26,6 +26,19 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: mcputils
+    repository:
+      owner: zeshanziya
+      name: homebrew-mcputils
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/zeshanziya/mcputils"
+    description: "CLI to manage MCP server configs and profiles for Claude Code"
+    license: "MIT"
+    test: |
+      system "#{bin}/mcputils --help"
+
 changelog:
   sort: asc
   filters:
