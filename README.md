@@ -76,6 +76,26 @@ mcputils profile remove-server work fs
 The catalog file itself is hand-edited for now (to add new server
 definitions); see the format below.
 
+### Importing existing servers
+
+If you already have MCP servers configured for Claude Code outside
+mcputils, `import` copies them into the catalog instead of hand-transcribing
+each one. It never overwrites an existing catalog entry and never touches
+the source config:
+
+```sh
+mcputils --global import     # reads ~/.claude.json's top-level mcpServers
+mcputils --project import    # reads the project's .mcp.json and
+                              # ~/.claude.json's project-local mcpServers,
+                              # merging both (same-name collision: .mcp.json wins)
+```
+
+Output lists what was imported and what was skipped and why (already in the
+catalog, or a same-name collision between the two project-scope sources).
+Import only adds to the catalog's server list — it never creates or
+modifies a profile, so you still group imported servers with
+`profile add-server` yourself.
+
 ### Enable / disable
 
 ```sh

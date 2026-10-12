@@ -320,3 +320,88 @@ func TestSetEnabled_MissingConfigFile_CreatesFile(t *testing.T) {
 		t.Fatalf("expected disabledMcpServers to contain fs, got %v", arr)
 	}
 }
+
+func findServer(servers []catalog.Server, name string) (catalog.Server, bool) {
+	for _, s := range servers {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return catalog.Server{}, false
+}
+
+func TestImportCandidates_Global_ReturnsAllTopLevelServers(t *testing.T) {
+	a, path := newAdapter(t, &catalog.Catalog{})
+	writeConfig(t, path, `{"mcpServers":{"fs":{"command":"fs-server"},"git":{"command":"git-server","args":["--root"]}}}`)
+
+	candidates, conflicts, err := a.ImportCandidates(globalScope())
+	if err != nil {
+		t.Fatalf("ImportCandidates failed: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("expected no conflicts, got %v", conflicts)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %v", candidates)
+	}
+	fs, ok := findServer(candidates, "fs")
+	if !ok || fs.Command != "fs-server" {
+		t.Fatalf("expected fs candidate with command fs-server, got %v", candidates)
+	}
+}
+
+func TestImportCandidates_Project_MergesBothSources(t *testing.T) {
+	a, path := newAdapter(t, &catalog.Catalog{})
+	projectRoot := t.TempDir()
+	mcpJSONPath := filepath.Join(projectRoot, ".mcp.json")
+	writeConfig(t, mcpJSONPath, `{"mcpServers":{"a":{"command":"a-server"}}}`)
+	writeConfig(t, path, `{"projects":{"`+projectRoot+`":{"mcpServers":{"b":{"command":"b-server"}}}}}`)
+
+	candidates, conflicts, err := a.ImportCandidates(projectScope(projectRoot))
+	if err != nil {
+		t.Fatalf("ImportCandidates failed: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("expected no conflicts, got %v", conflicts)
+	}
+	if _, ok := findServer(candidates, "a"); !ok {
+		t.Fatalf("expected candidate 'a', got %v", candidates)
+	}
+	if _, ok := findServer(candidates, "b"); !ok {
+		t.Fatalf("expected candidate 'b', got %v", candidates)
+	}
+}
+
+func TestImportCandidates_Project_CollisionPrefersMcpJSON(t *testing.T) {
+	a, path := newAdapter(t, &catalog.Catalog{})
+	projectRoot := t.TempDir()
+	mcpJSONPath := filepath.Join(projectRoot, ".mcp.json")
+	writeConfig(t, mcpJSONPath, `{"mcpServers":{"fs":{"command":"from-mcp-json"}}}`)
+	writeConfig(t, path, `{"projects":{"`+projectRoot+`":{"mcpServers":{"fs":{"command":"from-local"}}}}}`)
+
+	candidates, conflicts, err := a.ImportCandidates(projectScope(projectRoot))
+	if err != nil {
+		t.Fatalf("ImportCandidates failed: %v", err)
+	}
+	fs, ok := findServer(candidates, "fs")
+	if !ok || fs.Command != "from-mcp-json" {
+		t.Fatalf("expected fs candidate from .mcp.json, got %v", candidates)
+	}
+	if len(conflicts) != 1 || conflicts[0].Name != "fs" {
+		t.Fatalf("expected one conflict for fs, got %v", conflicts)
+	}
+}
+
+func TestImportCandidates_MissingSourcesReturnEmpty(t *testing.T) {
+	a, _ := newAdapter(t, &catalog.Catalog{})
+
+	candidates, conflicts, err := a.ImportCandidates(globalScope())
+	if err != nil || len(candidates) != 0 || len(conflicts) != 0 {
+		t.Fatalf("expected empty results for missing global config, got %v, %v, %v", candidates, conflicts, err)
+	}
+
+	candidates, conflicts, err = a.ImportCandidates(projectScope(t.TempDir()))
+	if err != nil || len(candidates) != 0 || len(conflicts) != 0 {
+		t.Fatalf("expected empty results for missing project sources, got %v, %v, %v", candidates, conflicts, err)
+	}
+}

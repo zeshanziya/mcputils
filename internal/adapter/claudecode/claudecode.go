@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/zeshanziya/mcputils/internal/adapter"
 	"github.com/zeshanziya/mcputils/internal/catalog"
 	"github.com/zeshanziya/mcputils/internal/jsonutil"
 	"github.com/zeshanziya/mcputils/internal/scope"
@@ -85,6 +86,81 @@ func (a *Adapter) setEnabledProject(projectRoot, serverName string, enabled bool
 		return append(current, serverName)
 	})
 	return 0, err
+}
+
+func (a *Adapter) ImportCandidates(sc scope.Scope) ([]catalog.Server, []adapter.ImportConflict, error) {
+	if sc.IsGlobal {
+		raw, err := jsonutil.ReadMapEntries(a.path, "mcpServers")
+		if err != nil {
+			return nil, nil, err
+		}
+		return rawMapToServers(raw), nil, nil
+	}
+
+	mcpJSONPath := filepath.Join(sc.ProjectRoot, ".mcp.json")
+	mcpJSONRaw, err := jsonutil.ReadMapEntries(mcpJSONPath, "mcpServers")
+	if err != nil {
+		return nil, nil, err
+	}
+	localRaw, err := jsonutil.ReadNestedMapEntries(a.path, "projects", sc.ProjectRoot, "mcpServers")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var candidates []catalog.Server
+	var conflicts []adapter.ImportConflict
+
+	for name, raw := range mcpJSONRaw {
+		rawMap, _ := raw.(map[string]interface{})
+		candidates = append(candidates, rawToServer(name, rawMap))
+		if _, dup := localRaw[name]; dup {
+			conflicts = append(conflicts, adapter.ImportConflict{
+				Name:   name,
+				Reason: "duplicate across sources (kept .mcp.json)",
+			})
+		}
+	}
+	for name, raw := range localRaw {
+		if _, dup := mcpJSONRaw[name]; dup {
+			continue
+		}
+		rawMap, _ := raw.(map[string]interface{})
+		candidates = append(candidates, rawToServer(name, rawMap))
+	}
+
+	return candidates, conflicts, nil
+}
+
+func rawMapToServers(raw map[string]interface{}) []catalog.Server {
+	var out []catalog.Server
+	for name, v := range raw {
+		rawMap, _ := v.(map[string]interface{})
+		out = append(out, rawToServer(name, rawMap))
+	}
+	return out
+}
+
+func rawToServer(name string, raw map[string]interface{}) catalog.Server {
+	s := catalog.Server{Name: name}
+	if cmd, ok := raw["command"].(string); ok {
+		s.Command = cmd
+	}
+	if argsRaw, ok := raw["args"].([]interface{}); ok {
+		for _, a := range argsRaw {
+			if str, ok := a.(string); ok {
+				s.Args = append(s.Args, str)
+			}
+		}
+	}
+	if envRaw, ok := raw["env"].(map[string]interface{}); ok {
+		s.Env = map[string]string{}
+		for k, v := range envRaw {
+			if str, ok := v.(string); ok {
+				s.Env[k] = str
+			}
+		}
+	}
+	return s
 }
 
 func (a *Adapter) setEnabledGlobal(serverName string, enabled bool) (int, error) {

@@ -370,3 +370,98 @@ func TestE2E_HistoryLogRecordsGlobalSweep(t *testing.T) {
 		t.Fatalf("expected swept_projects=2 in log output, got %q", out)
 	}
 }
+
+func TestE2E_Import_GlobalThenEnable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeRawJSON(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"fs":{"command":"fs-server"}}}`)
+
+	if _, err := exec(t, "--global", "import"); err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if _, err := exec(t, "--global", "profile", "create", "work"); err != nil {
+		t.Fatalf("profile create failed: %v", err)
+	}
+	if _, err := exec(t, "--global", "profile", "add-server", "work", "fs"); err != nil {
+		t.Fatalf("add-server failed: %v", err)
+	}
+	if _, err := exec(t, "--global", "profile", "enable", "work"); err != nil {
+		t.Fatalf("profile enable failed: %v", err)
+	}
+
+	m := readJSONFile(t, filepath.Join(home, ".claude.json"))
+	servers := m["mcpServers"].(map[string]interface{})
+	fs, ok := servers["fs"].(map[string]interface{})
+	if !ok || fs["command"] != "fs-server" {
+		t.Fatalf("expected fs enabled using the imported definition, got %v", servers)
+	}
+}
+
+func TestE2E_Import_ProjectBothSourcesMerged(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+
+	mcpJSONPath := filepath.Join(projectRoot, ".mcp.json")
+	writeRawJSON(t, mcpJSONPath, `{"mcpServers":{"a":{"command":"a-server"}}}`)
+	claudePath := filepath.Join(home, ".claude.json")
+	writeRawJSON(t, claudePath, `{"projects":{"`+projectRoot+`":{"mcpServers":{"b":{"command":"b-server"}}}}}`)
+
+	mcpJSONBefore, _ := os.ReadFile(mcpJSONPath)
+	claudeBefore, _ := os.ReadFile(claudePath)
+
+	if _, err := exec(t, "--project", projectRoot, "import"); err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+
+	cat, err := catalog.Load(filepath.Join(projectRoot, ".mcputils", "servers.yaml"))
+	if err != nil {
+		t.Fatalf("failed to load project catalog: %v", err)
+	}
+	if _, ok := cat.FindServer("a"); !ok {
+		t.Fatalf("expected 'a' imported, got %v", cat.Servers)
+	}
+	if _, ok := cat.FindServer("b"); !ok {
+		t.Fatalf("expected 'b' imported, got %v", cat.Servers)
+	}
+
+	mcpJSONAfter, _ := os.ReadFile(mcpJSONPath)
+	claudeAfter, _ := os.ReadFile(claudePath)
+	if string(mcpJSONBefore) != string(mcpJSONAfter) {
+		t.Fatalf("expected .mcp.json unchanged by import")
+	}
+	if string(claudeBefore) != string(claudeAfter) {
+		t.Fatalf("expected ~/.claude.json unchanged by import")
+	}
+}
+
+func TestE2E_Import_IdempotentRerun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeRawJSON(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"fs":{"command":"fs-server"}}}`)
+
+	if _, err := exec(t, "--global", "import"); err != nil {
+		t.Fatalf("first import failed: %v", err)
+	}
+	catPath := filepath.Join(home, ".config", "mcputils", "servers.yaml")
+	before, err := os.ReadFile(catPath)
+	if err != nil {
+		t.Fatalf("failed to read catalog after first import: %v", err)
+	}
+
+	out, err := exec(t, "--global", "import")
+	if err != nil {
+		t.Fatalf("second import failed: %v", err)
+	}
+	if !strings.Contains(out, "already in catalog") {
+		t.Fatalf("expected second import to report skip, got %q", out)
+	}
+
+	after, err := os.ReadFile(catPath)
+	if err != nil {
+		t.Fatalf("failed to read catalog after second import: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("expected catalog file not rewritten on a no-op import")
+	}
+}

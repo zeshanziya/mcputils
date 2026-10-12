@@ -125,6 +125,38 @@ func PatchMapEntry(path, mapKey, entryKey string, value interface{}) error {
 	return writeMap(path, m)
 }
 
+func ReadMapEntries(path, mapKey string) (map[string]interface{}, error) {
+	m, err := readMap(path)
+	if err != nil {
+		return nil, err
+	}
+	inner, ok := m[mapKey].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}, nil
+	}
+	return inner, nil
+}
+
+func ReadNestedMapEntries(path, outerKey, outerSubKey, innerKey string) (map[string]interface{}, error) {
+	m, err := readMap(path)
+	if err != nil {
+		return nil, err
+	}
+	outer, ok := m[outerKey].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}, nil
+	}
+	sub, ok := outer[outerSubKey].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}, nil
+	}
+	inner, ok := sub[innerKey].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}, nil
+	}
+	return inner, nil
+}
+
 func SweepNestedStringArrays(path, outerKey, innerKey, name string) (int, error) {
 	m, err := readMap(path)
 	if err != nil {

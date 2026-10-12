@@ -1,6 +1,10 @@
 package core
 
-import "github.com/zeshanziya/mcputils/internal/scope"
+import (
+	"github.com/zeshanziya/mcputils/internal/adapter"
+	"github.com/zeshanziya/mcputils/internal/catalog"
+	"github.com/zeshanziya/mcputils/internal/scope"
+)
 
 type fakeAdapter struct {
 	enabled map[string]bool
@@ -46,6 +50,10 @@ func (f *fakeAdapter) wasCalledWith(serverName string, enabled bool) bool {
 		}
 	}
 	return false
+}
+
+func (f *fakeAdapter) ImportCandidates(sc scope.Scope) ([]catalog.Server, []adapter.ImportConflict, error) {
+	return nil, nil, nil
 }
 
 func (f *fakeAdapter) wasCalledFor(serverName string) bool {

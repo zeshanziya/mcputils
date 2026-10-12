@@ -329,3 +329,91 @@ func TestSweepNestedStringArrays_MissingFile(t *testing.T) {
 		t.Fatalf("expected no file to be created")
 	}
 }
+
+func TestReadMapEntries_ReturnsEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"mcpServers":{"fs":{"command":"fs-server"}}}`), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+
+	entries, err := ReadMapEntries(path, "mcpServers")
+	if err != nil {
+		t.Fatalf("ReadMapEntries failed: %v", err)
+	}
+	if _, ok := entries["fs"]; !ok {
+		t.Fatalf("expected entries to contain 'fs', got %v", entries)
+	}
+}
+
+func TestReadMapEntries_MissingFileOrKeyReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	missingPath := filepath.Join(dir, "missing.json")
+	entries, err := ReadMapEntries(missingPath, "mcpServers")
+	if err != nil {
+		t.Fatalf("ReadMapEntries on missing file failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected empty map for missing file, got %v", entries)
+	}
+
+	noKeyPath := filepath.Join(dir, "nokey.json")
+	if err := os.WriteFile(noKeyPath, []byte(`{"other":1}`), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+	entries, err = ReadMapEntries(noKeyPath, "mcpServers")
+	if err != nil {
+		t.Fatalf("ReadMapEntries on missing key failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected empty map for missing key, got %v", entries)
+	}
+}
+
+func TestReadNestedMapEntries_ReturnsEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	content := `{"projects":{"/x":{"mcpServers":{"a":{"command":"a-server"}}}}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+
+	entries, err := ReadNestedMapEntries(path, "projects", "/x", "mcpServers")
+	if err != nil {
+		t.Fatalf("ReadNestedMapEntries failed: %v", err)
+	}
+	if _, ok := entries["a"]; !ok {
+		t.Fatalf("expected entries to contain 'a', got %v", entries)
+	}
+}
+
+func TestReadNestedMapEntries_MissingAnyLevelReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+
+	missingFile := filepath.Join(dir, "missing.json")
+	entries, err := ReadNestedMapEntries(missingFile, "projects", "/x", "mcpServers")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("expected empty map, no error for missing file; got %v, %v", entries, err)
+	}
+
+	noOuterKey := filepath.Join(dir, "no_outer.json")
+	os.WriteFile(noOuterKey, []byte(`{}`), 0o600)
+	entries, err = ReadNestedMapEntries(noOuterKey, "projects", "/x", "mcpServers")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("expected empty map, no error for missing outer key; got %v, %v", entries, err)
+	}
+
+	noSubKey := filepath.Join(dir, "no_sub.json")
+	os.WriteFile(noSubKey, []byte(`{"projects":{}}`), 0o600)
+	entries, err = ReadNestedMapEntries(noSubKey, "projects", "/x", "mcpServers")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("expected empty map, no error for missing outerSubKey; got %v, %v", entries, err)
+	}
+
+	noInnerKey := filepath.Join(dir, "no_inner.json")
+	os.WriteFile(noInnerKey, []byte(`{"projects":{"/x":{}}}`), 0o600)
+	entries, err = ReadNestedMapEntries(noInnerKey, "projects", "/x", "mcpServers")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("expected empty map, no error for missing innerKey; got %v, %v", entries, err)
+	}
+}
