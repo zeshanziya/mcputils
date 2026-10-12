@@ -51,12 +51,14 @@ mcputils operates on one of two scopes, chosen with `--global` or
 
 - `--global` — applies to Claude Code's user-level config (`~/.claude.json`,
   top-level `mcpServers`).
-- `--project` — applies to the current project (auto-detected by walking up
-  from the current directory to find a `.mcp.json`), or pass an explicit
-  path: `--project /path/to/project`.
+- `--project` — applies to the current project, or pass an explicit path:
+  `--project /path/to/project`.
 - With neither flag, mcputils auto-detects project scope from the current
-  directory; if no `.mcp.json` is found anywhere up the tree, it errors and
-  asks you to pass `--global` or `--project`.
+  directory only (no walking up to a parent directory): the current
+  directory is the project root if it has a `.mcp.json`, or if
+  `~/.claude.json`'s `projects` map has the current directory as an exact
+  key. If neither is true, it errors and asks you to pass `--global` or
+  `--project`.
 
 ### Catalog and profiles
 

@@ -465,3 +465,37 @@ func TestE2E_Import_IdempotentRerun(t *testing.T) {
 		t.Fatalf("expected catalog file not rewritten on a no-op import")
 	}
 }
+
+func TestE2E_AutoDetect_ClaudeJSONProjectsKeyNoMCPJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectDir := t.TempDir()
+	writeRawJSON(t, filepath.Join(home, ".claude.json"), `{"projects":{"`+projectDir+`":{}}}`)
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(origWd)
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"profile", "create", "work"})
+	globalFlag = false
+	projectFlag = ""
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	cat, err := catalog.Load(filepath.Join(projectDir, ".mcputils", "servers.yaml"))
+	if err != nil {
+		t.Fatalf("failed to load project catalog: %v", err)
+	}
+	if _, ok := cat.FindProfile("work"); !ok {
+		t.Fatalf("expected profile 'work' created via auto-detected project scope, got %v", cat.Profiles)
+	}
+}

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/zeshanziya/mcputils/internal/jsonutil"
 )
 
 type Scope struct {
@@ -35,7 +37,7 @@ func Resolve(globalFlag bool, projectFlag string, cwd string) (Scope, error) {
 	if projectFlag != "" {
 		root = projectFlag
 	} else {
-		found, err := findProjectRoot(cwd)
+		found, err := detectProjectRoot(cwd)
 		if err != nil {
 			return Scope{}, err
 		}
@@ -51,16 +53,19 @@ func Resolve(globalFlag bool, projectFlag string, cwd string) (Scope, error) {
 	}, nil
 }
 
-func findProjectRoot(cwd string) (string, error) {
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".mcp.json")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("no .mcp.json found in current directory or any parent; pass --global or --project")
-		}
-		dir = parent
+func detectProjectRoot(cwd string) (string, error) {
+	if _, err := os.Stat(filepath.Join(cwd, ".mcp.json")); err == nil {
+		return cwd, nil
 	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		claudePath := filepath.Join(home, ".claude.json")
+		if projects, err := jsonutil.ReadMapEntries(claudePath, "projects"); err == nil {
+			if _, ok := projects[cwd]; ok {
+				return cwd, nil
+			}
+		}
+	}
+
+	return "", errors.New("no .mcp.json and no ~/.claude.json project entry found for the current directory; pass --global or --project")
 }

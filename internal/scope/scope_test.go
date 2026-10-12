@@ -23,7 +23,8 @@ func TestResolve_GlobalFlag(t *testing.T) {
 	}
 }
 
-func TestResolve_ProjectAutoDetect(t *testing.T) {
+func TestResolve_ProjectAutoDetect_MCPJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("setup failed: %v", err)
@@ -41,15 +42,39 @@ func TestResolve_ProjectAutoDetect(t *testing.T) {
 	}
 }
 
-func TestResolve_ProjectNotFound(t *testing.T) {
-	root := t.TempDir()
-	_, err := Resolve(false, "", root)
-	if err == nil {
-		t.Fatal("expected error when no .mcp.json found")
+func TestResolve_ProjectAutoDetect_ClaudeJSONProjectsKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+
+	claudeJSON := `{"projects":{"` + cwd + `":{}}}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(claudeJSON), 0o644); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	sc, err := Resolve(false, "", cwd)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if sc.IsGlobal {
+		t.Fatalf("expected IsGlobal false, got %+v", sc)
+	}
+	if sc.ProjectRoot != cwd {
+		t.Fatalf("expected ProjectRoot %s, got %s", cwd, sc.ProjectRoot)
 	}
 }
 
-func TestResolve_NestedCwd(t *testing.T) {
+func TestResolve_ProjectNotFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	_, err := Resolve(false, "", root)
+	if err == nil {
+		t.Fatal("expected error when neither .mcp.json nor a matching ~/.claude.json projects key is found")
+	}
+}
+
+func TestResolve_NoWalkUp_NestedCwdErrors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("setup failed: %v", err)
@@ -59,12 +84,9 @@ func TestResolve_NestedCwd(t *testing.T) {
 		t.Fatalf("setup failed: %v", err)
 	}
 
-	sc, err := Resolve(false, "", nested)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if sc.ProjectRoot != root {
-		t.Fatalf("expected ProjectRoot %s, got %s", root, sc.ProjectRoot)
+	_, err := Resolve(false, "", nested)
+	if err == nil {
+		t.Fatal("expected error — auto-detect no longer walks up to find the parent's .mcp.json")
 	}
 }
 
