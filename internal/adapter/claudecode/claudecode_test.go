@@ -405,3 +405,74 @@ func TestImportCandidates_MissingSourcesReturnEmpty(t *testing.T) {
 		t.Fatalf("expected empty results for missing project sources, got %v, %v, %v", candidates, conflicts, err)
 	}
 }
+
+func TestSetEnabled_Global_Enable_HTTPServer_RecreatesCorrectShape(t *testing.T) {
+	cat := &catalog.Catalog{Servers: []catalog.Server{
+		{Name: "aihq", Type: "http", URL: "https://aihq.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer xyz"}},
+	}}
+	a, path := newAdapter(t, cat)
+	writeConfig(t, path, `{}`)
+
+	if _, err := a.SetEnabled(globalScope(), "aihq", true); err != nil {
+		t.Fatalf("SetEnabled failed: %v", err)
+	}
+
+	m := readConfigForTest(t, path)
+	servers := m["mcpServers"].(map[string]interface{})
+	entry := servers["aihq"].(map[string]interface{})
+	if entry["type"] != "http" {
+		t.Fatalf("expected type http, got %v", entry)
+	}
+	if entry["url"] != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected matching url, got %v", entry)
+	}
+	headers, _ := entry["headers"].(map[string]interface{})
+	if headers["Authorization"] != "Bearer xyz" {
+		t.Fatalf("expected matching headers, got %v", entry)
+	}
+	if _, ok := entry["command"]; ok {
+		t.Fatalf("expected no command key for an http entry, got %v", entry)
+	}
+}
+
+func TestImportCandidates_Global_HTTPEntry_CapturesURLAndHeaders(t *testing.T) {
+	a, path := newAdapter(t, &catalog.Catalog{})
+	writeConfig(t, path, `{"mcpServers":{"aihq":{"type":"http","url":"https://aihq.example.com/mcp","headers":{"Authorization":"Bearer xyz"}}}}`)
+
+	candidates, conflicts, err := a.ImportCandidates(globalScope())
+	if err != nil {
+		t.Fatalf("ImportCandidates failed: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("expected no conflicts, got %v", conflicts)
+	}
+	aihq, ok := findServer(candidates, "aihq")
+	if !ok || !aihq.IsHTTP() {
+		t.Fatalf("expected http candidate 'aihq', got %v", candidates)
+	}
+	if aihq.URL != "https://aihq.example.com/mcp" || aihq.Headers["Authorization"] != "Bearer xyz" {
+		t.Fatalf("expected matching url/headers, got %+v", aihq)
+	}
+	if aihq.Command != "" {
+		t.Fatalf("expected empty command for http candidate, got %q", aihq.Command)
+	}
+}
+
+func TestImportCandidates_Project_HTTPEntryInMCPJSON(t *testing.T) {
+	a, _ := newAdapter(t, &catalog.Catalog{})
+	projectRoot := t.TempDir()
+	mcpJSONPath := filepath.Join(projectRoot, ".mcp.json")
+	writeConfig(t, mcpJSONPath, `{"mcpServers":{"aihq":{"type":"http","url":"https://aihq.example.com/mcp","headers":{"Authorization":"Bearer xyz"}}}}`)
+
+	candidates, _, err := a.ImportCandidates(projectScope(projectRoot))
+	if err != nil {
+		t.Fatalf("ImportCandidates failed: %v", err)
+	}
+	aihq, ok := findServer(candidates, "aihq")
+	if !ok || !aihq.IsHTTP() {
+		t.Fatalf("expected http candidate 'aihq', got %v", candidates)
+	}
+	if aihq.URL != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected matching url, got %+v", aihq)
+	}
+}

@@ -106,6 +106,28 @@ func TestImportServers_NeverTouchesProfiles(t *testing.T) {
 	}
 }
 
+func TestImportServers_AddsHTTPCandidateUnchanged(t *testing.T) {
+	cat := &catalog.Catalog{}
+	fa := &fakeImportAdapter{
+		fakeAdapter: newFakeAdapter(),
+		candidates: []catalog.Server{
+			{Name: "aihq", Type: "http", URL: "https://aihq.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer xyz"}},
+		},
+	}
+
+	result, err := ImportServers(cat, fa, testScope())
+	if err != nil {
+		t.Fatalf("ImportServers failed: %v", err)
+	}
+	if len(result.Imported) != 1 || result.Imported[0] != "aihq" {
+		t.Fatalf("expected aihq imported, got %v", result.Imported)
+	}
+	s, ok := cat.FindServer("aihq")
+	if !ok || !s.IsHTTP() || s.URL != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected http server added unchanged, got %+v", s)
+	}
+}
+
 func TestImportServers_AdapterErrorPropagates(t *testing.T) {
 	cat := &catalog.Catalog{}
 	wantErr := errors.New("boom")

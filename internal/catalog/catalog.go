@@ -11,9 +11,20 @@ import (
 
 type Server struct {
 	Name    string            `yaml:"name"`
-	Command string            `yaml:"command"`
+	Command string            `yaml:"command,omitempty"`
 	Args    []string          `yaml:"args,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
+	Type    string            `yaml:"type,omitempty"`
+	URL     string            `yaml:"url,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
+}
+
+// IsHTTP reports whether this server is http transport: Type == "http", or
+// URL is non-empty. No validation rejects a Server carrying both stdio
+// fields (Command/Args) and http fields (URL/Headers) at once — a
+// hand-edited catalog is trusted.
+func (s Server) IsHTTP() bool {
+	return s.Type == "http" || s.URL != ""
 }
 
 type Profile struct {

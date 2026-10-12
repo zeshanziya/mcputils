@@ -130,6 +130,49 @@ func TestRemoveServer_UnreferencedSucceeds(t *testing.T) {
 	}
 }
 
+func TestServer_IsHTTP_TypeFieldSet(t *testing.T) {
+	s := Server{Type: "http"}
+	if !s.IsHTTP() {
+		t.Fatal("expected IsHTTP true when Type is http")
+	}
+}
+
+func TestServer_IsHTTP_URLSetNoType(t *testing.T) {
+	s := Server{URL: "https://example.com/mcp"}
+	if !s.IsHTTP() {
+		t.Fatal("expected IsHTTP true when URL is set")
+	}
+}
+
+func TestServer_IsHTTP_StdioServerFalse(t *testing.T) {
+	s := Server{Command: "fs-server"}
+	if s.IsHTTP() {
+		t.Fatal("expected IsHTTP false for a stdio server")
+	}
+}
+
+func TestLoad_RoundTrip_HTTPServer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "servers.yaml")
+
+	cat := &Catalog{
+		Servers: []Server{
+			{Name: "aihq", Type: "http", URL: "${AIHQ_URL}/mcp/x", Headers: map[string]string{"Authorization": "${AIHQ_TOKEN}"}},
+		},
+	}
+	if err := cat.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !reflect.DeepEqual(cat.Servers, loaded.Servers) {
+		t.Fatalf("expected round-trip to match, got %+v vs %+v", cat.Servers, loaded.Servers)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

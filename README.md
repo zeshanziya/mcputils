@@ -135,16 +135,27 @@ mcputils log                # print the history, newest first
 
 ## Catalog format
 
+Two transports are supported, matching the two shapes Claude Code's own
+`mcpServers` entries use. A server is treated as http if it has `type: http`
+or a non-empty `url`; otherwise it's stdio.
+
 ```yaml
 servers:
+  # stdio
   - name: fs
     command: fs-server
     args: ["--root", "/"]
     env:
-      API_KEY: "$API_KEY"   # passthrough only — mcputils never resolves env values
+      API_KEY: "$API_KEY"   # passthrough only — mcputils never resolves env/header values
+  # http
+  - name: aihq
+    type: http
+    url: "${AIHQ_URL}/mcp/x"
+    headers:
+      Authorization: "${AIHQ_TOKEN}"
 profiles:
   - name: work
-    servers: [fs]
+    servers: [fs, aihq]
 ```
 
 Catalog files are stored at `0600` and their parent directories at `0700`

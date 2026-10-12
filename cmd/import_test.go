@@ -69,6 +69,32 @@ func TestCLI_Import_SkipsExisting(t *testing.T) {
 	}
 }
 
+func TestCLI_Import_HTTPServer_SavesCorrectCatalogYAML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeRawJSON(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"aihq":{"type":"http","url":"https://aihq.example.com/mcp","headers":{"Authorization":"Bearer xyz"}}}}`)
+
+	out, err := exec(t, "--global", "import")
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if !strings.Contains(out, "aihq") {
+		t.Fatalf("expected output to mention aihq as imported, got %q", out)
+	}
+
+	cat, err := catalog.Load(filepath.Join(home, ".config", "mcputils", "servers.yaml"))
+	if err != nil {
+		t.Fatalf("failed to load catalog: %v", err)
+	}
+	s, ok := cat.FindServer("aihq")
+	if !ok || !s.IsHTTP() || s.URL != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected aihq added as http server, got %v", cat.Servers)
+	}
+	if s.Command != "" {
+		t.Fatalf("expected no command set for http server, got %q", s.Command)
+	}
+}
+
 func TestCLI_Import_NothingToImport(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

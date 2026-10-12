@@ -466,6 +466,54 @@ func TestE2E_Import_IdempotentRerun(t *testing.T) {
 	}
 }
 
+func TestE2E_Import_HTTPServerThenEnable_RoundTrips(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claudePath := filepath.Join(home, ".claude.json")
+	writeRawJSON(t, claudePath, `{"mcpServers":{"aihq":{"type":"http","url":"https://aihq.example.com/mcp","headers":{"Authorization":"Bearer xyz"}}}}`)
+
+	if _, err := exec(t, "--global", "import"); err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	cat, err := catalog.Load(filepath.Join(home, ".config", "mcputils", "servers.yaml"))
+	if err != nil {
+		t.Fatalf("failed to load catalog: %v", err)
+	}
+	s, ok := cat.FindServer("aihq")
+	if !ok || !s.IsHTTP() {
+		t.Fatalf("expected aihq imported as http server, got %v", cat.Servers)
+	}
+
+	if _, err := exec(t, "--global", "server", "disable", "aihq"); err != nil {
+		t.Fatalf("server disable failed: %v", err)
+	}
+	m := readJSONFile(t, claudePath)
+	servers := m["mcpServers"].(map[string]interface{})
+	if _, ok := servers["aihq"]; ok {
+		t.Fatalf("expected aihq entry removed after disable, got %v", servers)
+	}
+
+	if _, err := exec(t, "--global", "server", "enable", "aihq"); err != nil {
+		t.Fatalf("server enable failed: %v", err)
+	}
+	m = readJSONFile(t, claudePath)
+	servers = m["mcpServers"].(map[string]interface{})
+	entry, ok := servers["aihq"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected aihq entry re-created after enable, got %v", servers)
+	}
+	if entry["type"] != "http" || entry["url"] != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected type/url preserved after round-trip, got %v", entry)
+	}
+	headers, _ := entry["headers"].(map[string]interface{})
+	if headers["Authorization"] != "Bearer xyz" {
+		t.Fatalf("expected headers preserved after round-trip, got %v", entry)
+	}
+	if _, ok := entry["command"]; ok {
+		t.Fatalf("expected no command key to ever appear for the http entry, got %v", entry)
+	}
+}
+
 func TestE2E_AutoDetect_ClaudeJSONProjectsKeyNoMCPJSON(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

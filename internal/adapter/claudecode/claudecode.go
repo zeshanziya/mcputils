@@ -142,6 +142,23 @@ func rawMapToServers(raw map[string]interface{}) []catalog.Server {
 
 func rawToServer(name string, raw map[string]interface{}) catalog.Server {
 	s := catalog.Server{Name: name}
+
+	rawURL, _ := raw["url"].(string)
+	rawType, _ := raw["type"].(string)
+	if rawType == "http" || rawURL != "" {
+		s.Type = "http"
+		s.URL = rawURL
+		if headersRaw, ok := raw["headers"].(map[string]interface{}); ok {
+			s.Headers = map[string]string{}
+			for k, v := range headersRaw {
+				if str, ok := v.(string); ok {
+					s.Headers[k] = str
+				}
+			}
+		}
+		return s
+	}
+
 	if cmd, ok := raw["command"].(string); ok {
 		s.Command = cmd
 	}
@@ -163,6 +180,21 @@ func rawToServer(name string, raw map[string]interface{}) catalog.Server {
 	return s
 }
 
+func serverToRaw(s catalog.Server) map[string]interface{} {
+	if s.IsHTTP() {
+		return map[string]interface{}{
+			"type":    "http",
+			"url":     s.URL,
+			"headers": s.Headers,
+		}
+	}
+	return map[string]interface{}{
+		"command": s.Command,
+		"args":    s.Args,
+		"env":     s.Env,
+	}
+}
+
 func (a *Adapter) setEnabledGlobal(serverName string, enabled bool) (int, error) {
 	if !enabled {
 		err := jsonutil.PatchMapEntry(a.path, "mcpServers", serverName, nil)
@@ -174,11 +206,7 @@ func (a *Adapter) setEnabledGlobal(serverName string, enabled bool) (int, error)
 		return 0, fmt.Errorf("unknown server: %s", serverName)
 	}
 
-	entry := map[string]interface{}{
-		"command": server.Command,
-		"args":    server.Args,
-		"env":     server.Env,
-	}
+	entry := serverToRaw(*server)
 	if err := jsonutil.PatchMapEntry(a.path, "mcpServers", serverName, entry); err != nil {
 		return 0, err
 	}
