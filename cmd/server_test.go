@@ -53,8 +53,8 @@ func TestCLI_ServerEnable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	project := t.TempDir()
-	projCatPath := filepath.Join(project, ".mcputils", "servers.yaml")
-	writeCatalogFixture(t, projCatPath, &catalog.Catalog{
+	catPath := filepath.Join(home, ".config", "mcputils", "servers.yaml")
+	writeCatalogFixture(t, catPath, &catalog.Catalog{
 		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
 	})
 

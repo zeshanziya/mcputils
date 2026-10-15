@@ -62,9 +62,13 @@ mcputils operates on one of two scopes, chosen with `--global` or
 
 ### Catalog and profiles
 
-Servers live in a YAML catalog (`~/.config/mcputils/servers.yaml` for global
-scope, `.mcputils/servers.yaml` for project scope) and are grouped into
-named profiles.
+Servers and profiles live in a single shared YAML catalog,
+`~/.config/mcputils/servers.yaml` — one file, used for every scope. A server
+or profile is defined once and is usable from any project or globally; there
+is no per-project catalog. Only *active-profile tracking* is scope-specific
+(and it's centralized too — see below), so a profile can be active in one
+project and inactive in another even though its definition is shared.
+mcputils never writes anything inside a project/repo directory.
 
 ```sh
 # create a profile
@@ -158,9 +162,17 @@ profiles:
     servers: [fs, aihq]
 ```
 
-Catalog files are stored at `0600` and their parent directories at `0700`
-since they can hold literal secret values in `env` — only the owning user
-can read them.
+All of mcputils' own files live under `~/.config/mcputils/`:
+- `servers.yaml` — the one shared catalog.
+- `state/global.yaml`, `state/<hash>.yaml` — active-profile tracking, one
+  file for global scope and one per distinct project root (keyed by a hash
+  of its absolute path). Renaming/moving a project directory starts it with
+  fresh (empty) active-profile state.
+- `history.jsonl` — the enable/disable log (see below).
+
+These files are stored at `0600` and their parent directories at `0700`
+since the catalog can hold literal secret values in `env`/`headers` — only
+the owning user can read them.
 
 ## Supported clients
 

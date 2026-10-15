@@ -8,7 +8,10 @@ import (
 )
 
 func TestResolve_GlobalFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	cwd := t.TempDir()
+
 	sc, err := Resolve(true, "", cwd)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -16,15 +19,19 @@ func TestResolve_GlobalFlag(t *testing.T) {
 	if !sc.IsGlobal {
 		t.Fatalf("expected IsGlobal true, got %+v", sc)
 	}
-	home, _ := os.UserHomeDir()
-	expectedDir := filepath.Join(home, ".config", "mcputils")
-	if !strings.HasPrefix(sc.CatalogPath, expectedDir) || !strings.HasPrefix(sc.StatePath, expectedDir) {
-		t.Fatalf("expected paths under %s, got %+v", expectedDir, sc)
+	expectedCatalog := filepath.Join(home, ".config", "mcputils", "servers.yaml")
+	if sc.CatalogPath != expectedCatalog {
+		t.Fatalf("expected CatalogPath %s, got %s", expectedCatalog, sc.CatalogPath)
+	}
+	expectedState := filepath.Join(home, ".config", "mcputils", "state", "global.yaml")
+	if sc.StatePath != expectedState {
+		t.Fatalf("expected StatePath %s, got %s", expectedState, sc.StatePath)
 	}
 }
 
 func TestResolve_ProjectAutoDetect_MCPJSON(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("setup failed: %v", err)
@@ -39,6 +46,14 @@ func TestResolve_ProjectAutoDetect_MCPJSON(t *testing.T) {
 	}
 	if sc.ProjectRoot != root {
 		t.Fatalf("expected ProjectRoot %s, got %s", root, sc.ProjectRoot)
+	}
+	expectedCatalog := filepath.Join(home, ".config", "mcputils", "servers.yaml")
+	if sc.CatalogPath != expectedCatalog {
+		t.Fatalf("expected CatalogPath %s (same as global), got %s", expectedCatalog, sc.CatalogPath)
+	}
+	expectedState := filepath.Join(home, ".config", "mcputils", "state", stateFileName(root))
+	if sc.StatePath != expectedState {
+		t.Fatalf("expected StatePath %s, got %s", expectedState, sc.StatePath)
 	}
 }
 
@@ -91,7 +106,10 @@ func TestResolve_NoWalkUp_NestedCwdErrors(t *testing.T) {
 }
 
 func TestResolve_ProjectExplicitPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	explicit := "/some/path"
+
 	sc, err := Resolve(false, explicit, "/irrelevant/cwd")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -102,9 +120,16 @@ func TestResolve_ProjectExplicitPath(t *testing.T) {
 	if sc.ProjectRoot != explicit {
 		t.Fatalf("expected ProjectRoot %s, got %s", explicit, sc.ProjectRoot)
 	}
-	expectedDir := filepath.Join(explicit, ".mcputils")
-	if !strings.HasPrefix(sc.CatalogPath, expectedDir) || !strings.HasPrefix(sc.StatePath, expectedDir) {
-		t.Fatalf("expected paths under %s, got %+v", expectedDir, sc)
+	expectedCatalog := filepath.Join(home, ".config", "mcputils", "servers.yaml")
+	if sc.CatalogPath != expectedCatalog {
+		t.Fatalf("expected CatalogPath %s, got %s", expectedCatalog, sc.CatalogPath)
+	}
+	if strings.Contains(sc.CatalogPath, ".mcputils") {
+		t.Fatalf("expected no per-project .mcputils dir in CatalogPath, got %s", sc.CatalogPath)
+	}
+	expectedState := filepath.Join(home, ".config", "mcputils", "state", stateFileName(explicit))
+	if sc.StatePath != expectedState {
+		t.Fatalf("expected StatePath %s, got %s", expectedState, sc.StatePath)
 	}
 }
 
@@ -112,5 +137,64 @@ func TestResolve_ConflictingFlagsErrors(t *testing.T) {
 	_, err := Resolve(true, "/x", "/irrelevant")
 	if err == nil {
 		t.Fatal("expected error for conflicting --global and --project flags")
+	}
+}
+
+func TestResolve_CatalogPathIdenticalAcrossScopes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	global, err := Resolve(true, "", "/irrelevant")
+	if err != nil {
+		t.Fatalf("global Resolve failed: %v", err)
+	}
+	projectA, err := Resolve(false, "/project/a", "/irrelevant")
+	if err != nil {
+		t.Fatalf("project A Resolve failed: %v", err)
+	}
+	projectB, err := Resolve(false, "/project/b", "/irrelevant")
+	if err != nil {
+		t.Fatalf("project B Resolve failed: %v", err)
+	}
+
+	if global.CatalogPath != projectA.CatalogPath || projectA.CatalogPath != projectB.CatalogPath {
+		t.Fatalf("expected identical CatalogPath across scopes, got %s, %s, %s", global.CatalogPath, projectA.CatalogPath, projectB.CatalogPath)
+	}
+}
+
+func TestResolve_StatePathDiffersPerProjectRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	global, err := Resolve(true, "", "/irrelevant")
+	if err != nil {
+		t.Fatalf("global Resolve failed: %v", err)
+	}
+	projectA, err := Resolve(false, "/project/a", "/irrelevant")
+	if err != nil {
+		t.Fatalf("project A Resolve failed: %v", err)
+	}
+	projectB, err := Resolve(false, "/project/b", "/irrelevant")
+	if err != nil {
+		t.Fatalf("project B Resolve failed: %v", err)
+	}
+
+	if global.StatePath == projectA.StatePath || projectA.StatePath == projectB.StatePath || global.StatePath == projectB.StatePath {
+		t.Fatalf("expected distinct StatePath per scope, got %s, %s, %s", global.StatePath, projectA.StatePath, projectB.StatePath)
+	}
+}
+
+func TestStateFileName_Deterministic(t *testing.T) {
+	a := stateFileName("/some/project")
+	b := stateFileName("/some/project")
+	if a != b {
+		t.Fatalf("expected deterministic output, got %s vs %s", a, b)
+	}
+}
+
+func TestStateFileName_DifferentRootsDifferentNames(t *testing.T) {
+	a := stateFileName("/some/project")
+	b := stateFileName("/some/other-project")
+	if a == b {
+		t.Fatalf("expected different output for different roots, got %s for both", a)
 	}
 }

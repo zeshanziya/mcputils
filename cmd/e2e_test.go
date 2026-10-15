@@ -146,13 +146,7 @@ func TestE2E_GlobalVsProjectIsolation(t *testing.T) {
 	projectB := t.TempDir()
 
 	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "gs", Command: "global-server"}},
-	})
-	writeCatalogFixture(t, filepath.Join(projectA, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
-	writeCatalogFixture(t, filepath.Join(projectB, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
+		Servers: []catalog.Server{{Name: "gs", Command: "global-server"}, {Name: "fs", Command: "fs-server"}},
 	})
 
 	exec(t, "--project", projectA, "server", "disable", "fs")
@@ -192,9 +186,6 @@ func TestE2E_ConfigFileUnrelatedFieldsPreserved(t *testing.T) {
 	writeFileAt(t, claudePath, `{"someSetting":42,"mcpServers":{"other":{"command":"y"}},"projects":{"/other":{"disabledMcpServers":["keep"]}}}`)
 
 	project := t.TempDir()
-	writeCatalogFixture(t, filepath.Join(project, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
 
 	exec(t, "--project", project, "server", "disable", "fs")
 	exec(t, "--project", project, "server", "enable", "fs")
@@ -282,12 +273,6 @@ func TestE2E_GlobalEnableReEnablesEverywhere(t *testing.T) {
 	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
 		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
 	})
-	writeCatalogFixture(t, filepath.Join(projectA, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
-	writeCatalogFixture(t, filepath.Join(projectB, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
 
 	exec(t, "--project", projectA, "server", "disable", "fs")
 	exec(t, "--project", projectB, "server", "disable", "fs")
@@ -351,12 +336,6 @@ func TestE2E_HistoryLogRecordsGlobalSweep(t *testing.T) {
 	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
 		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
 	})
-	writeCatalogFixture(t, filepath.Join(projectA, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
-	writeCatalogFixture(t, filepath.Join(projectB, ".mcputils", "servers.yaml"), &catalog.Catalog{
-		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
-	})
 
 	exec(t, "--project", projectA, "server", "disable", "fs")
 	exec(t, "--project", projectB, "server", "disable", "fs")
@@ -414,9 +393,9 @@ func TestE2E_Import_ProjectBothSourcesMerged(t *testing.T) {
 		t.Fatalf("import failed: %v", err)
 	}
 
-	cat, err := catalog.Load(filepath.Join(projectRoot, ".mcputils", "servers.yaml"))
+	cat, err := catalog.Load(filepath.Join(home, ".config", "mcputils", "servers.yaml"))
 	if err != nil {
-		t.Fatalf("failed to load project catalog: %v", err)
+		t.Fatalf("failed to load catalog: %v", err)
 	}
 	if _, ok := cat.FindServer("a"); !ok {
 		t.Fatalf("expected 'a' imported, got %v", cat.Servers)
@@ -539,11 +518,82 @@ func TestE2E_AutoDetect_ClaudeJSONProjectsKeyNoMCPJSON(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	cat, err := catalog.Load(filepath.Join(projectDir, ".mcputils", "servers.yaml"))
+	cat, err := catalog.Load(filepath.Join(home, ".config", "mcputils", "servers.yaml"))
 	if err != nil {
-		t.Fatalf("failed to load project catalog: %v", err)
+		t.Fatalf("failed to load catalog: %v", err)
 	}
 	if _, ok := cat.FindProfile("work"); !ok {
 		t.Fatalf("expected profile 'work' created via auto-detected project scope, got %v", cat.Profiles)
+	}
+}
+
+func TestE2E_SingleCatalog_SharedAcrossProjectAndGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, ".mcp.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
+		Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}},
+	})
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(origWd)
+	if err := os.Chdir(projectRoot); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	if _, err := exec(t, "profile", "create", "work"); err != nil {
+		t.Fatalf("profile create (auto-detected project scope) failed: %v", err)
+	}
+	if _, err := exec(t, "profile", "add-server", "work", "fs"); err != nil {
+		t.Fatalf("add-server (auto-detected project scope) failed: %v", err)
+	}
+
+	os.Chdir(origWd)
+
+	if _, err := exec(t, "--global", "profile", "enable", "work"); err != nil {
+		t.Fatalf("expected the 'work' profile created under project scope to be enableable from --global without redefining it: %v", err)
+	}
+
+	m := readJSONFile(t, filepath.Join(home, ".claude.json"))
+	servers := m["mcpServers"].(map[string]interface{})
+	if _, ok := servers["fs"]; !ok {
+		t.Fatalf("expected fs enabled globally via the shared catalog's 'work' profile, got %v", servers)
+	}
+}
+
+func TestE2E_ActiveProfileState_IsolatedPerProjectRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
+		Servers:  []catalog.Server{{Name: "fs", Command: "fs-server"}},
+		Profiles: []catalog.Profile{{Name: "work", Servers: []string{"fs"}}},
+	})
+
+	if _, err := exec(t, "--project", projectA, "profile", "enable", "work"); err != nil {
+		t.Fatalf("enable in project A failed: %v", err)
+	}
+
+	outA, err := exec(t, "--project", projectA, "list", "profiles")
+	if err != nil {
+		t.Fatalf("list profiles (project A) failed: %v", err)
+	}
+	if !strings.Contains(outA, "active") {
+		t.Fatalf("expected 'work' active in project A, got %q", outA)
+	}
+
+	outB, err := exec(t, "--project", projectB, "list", "profiles")
+	if err != nil {
+		t.Fatalf("list profiles (project B) failed: %v", err)
+	}
+	if !strings.Contains(outB, "inactive") {
+		t.Fatalf("expected 'work' inactive in project B, got %q", outB)
 	}
 }

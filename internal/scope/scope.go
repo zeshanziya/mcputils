@@ -1,6 +1,8 @@
 package scope
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,15 +22,17 @@ func Resolve(globalFlag bool, projectFlag string, cwd string) (Scope, error) {
 		return Scope{}, errors.New("--global and --project are mutually exclusive")
 	}
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Scope{}, err
+	}
+	configDir := filepath.Join(home, ".config", "mcputils")
+	catalogPath := filepath.Join(configDir, "servers.yaml")
+
 	if globalFlag {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return Scope{}, err
-		}
-		dir := filepath.Join(home, ".config", "mcputils")
 		return Scope{
-			CatalogPath: filepath.Join(dir, "servers.yaml"),
-			StatePath:   filepath.Join(dir, "state.yaml"),
+			CatalogPath: catalogPath,
+			StatePath:   filepath.Join(configDir, "state", "global.yaml"),
 			IsGlobal:    true,
 		}, nil
 	}
@@ -44,13 +48,17 @@ func Resolve(globalFlag bool, projectFlag string, cwd string) (Scope, error) {
 		root = found
 	}
 
-	dir := filepath.Join(root, ".mcputils")
 	return Scope{
-		CatalogPath: filepath.Join(dir, "servers.yaml"),
-		StatePath:   filepath.Join(dir, "state.yaml"),
+		CatalogPath: catalogPath,
+		StatePath:   filepath.Join(configDir, "state", stateFileName(root)),
 		IsGlobal:    false,
 		ProjectRoot: root,
 	}, nil
+}
+
+func stateFileName(root string) string {
+	sum := sha256.Sum256([]byte(root))
+	return hex.EncodeToString(sum[:])[:16] + ".yaml"
 }
 
 func detectProjectRoot(cwd string) (string, error) {
