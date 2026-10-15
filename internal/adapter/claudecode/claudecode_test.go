@@ -70,7 +70,7 @@ func TestSetEnabled_Project_AddsToDisabledArray(t *testing.T) {
 }
 
 func TestSetEnabled_Project_RemovesFromDisabledArray(t *testing.T) {
-	a, path := newAdapter(t, &catalog.Catalog{})
+	a, path := newAdapter(t, &catalog.Catalog{Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}}})
 	writeConfig(t, path, `{"projects":{"/proj":{"disabledMcpServers":["fs"]}}}`)
 
 	if _, err := a.SetEnabled(projectScope("/proj"), "fs", true); err != nil {
@@ -474,5 +474,97 @@ func TestImportCandidates_Project_HTTPEntryInMCPJSON(t *testing.T) {
 	}
 	if aihq.URL != "https://aihq.example.com/mcp" {
 		t.Fatalf("expected matching url, got %+v", aihq)
+	}
+}
+
+func TestSetEnabled_Project_Enable_CreatesEntryWhenMissing(t *testing.T) {
+	cat := &catalog.Catalog{Servers: []catalog.Server{{Name: "fs", Command: "fs-server", Args: []string{"--root"}, Env: map[string]string{"X": "1"}}}}
+	a, path := newAdapter(t, cat)
+	writeConfig(t, path, `{}`)
+
+	if _, err := a.SetEnabled(projectScope("/proj"), "fs", true); err != nil {
+		t.Fatalf("SetEnabled failed: %v", err)
+	}
+
+	m := readConfigForTest(t, path)
+	projects := m["projects"].(map[string]interface{})
+	proj := projects["/proj"].(map[string]interface{})
+	servers := proj["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	if entry["command"] != "fs-server" {
+		t.Fatalf("expected entry created from catalog, got %v", entry)
+	}
+	arr, _ := proj["disabledMcpServers"].([]interface{})
+	for _, v := range arr {
+		if v == "fs" {
+			t.Fatalf("expected fs absent from disabledMcpServers, got %v", arr)
+		}
+	}
+}
+
+func TestSetEnabled_Project_Enable_CreatesHTTPEntryWhenMissing(t *testing.T) {
+	cat := &catalog.Catalog{Servers: []catalog.Server{
+		{Name: "aihq", Type: "http", URL: "https://aihq.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer xyz"}},
+	}}
+	a, path := newAdapter(t, cat)
+	writeConfig(t, path, `{}`)
+
+	if _, err := a.SetEnabled(projectScope("/proj"), "aihq", true); err != nil {
+		t.Fatalf("SetEnabled failed: %v", err)
+	}
+
+	m := readConfigForTest(t, path)
+	servers := m["projects"].(map[string]interface{})["/proj"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	entry := servers["aihq"].(map[string]interface{})
+	if entry["type"] != "http" || entry["url"] != "https://aihq.example.com/mcp" {
+		t.Fatalf("expected http entry created from catalog, got %v", entry)
+	}
+	if _, ok := entry["command"]; ok {
+		t.Fatalf("expected no command key for http entry, got %v", entry)
+	}
+}
+
+func TestSetEnabled_Project_Enable_LeavesExistingEntryUntouched(t *testing.T) {
+	cat := &catalog.Catalog{Servers: []catalog.Server{{Name: "fs", Command: "fs-server", Args: []string{"--default"}}}}
+	a, path := newAdapter(t, cat)
+	writeConfig(t, path, `{"projects":{"/proj":{"mcpServers":{"fs":{"command":"fs-server","args":["--custom"]}}}}}`)
+
+	if _, err := a.SetEnabled(projectScope("/proj"), "fs", true); err != nil {
+		t.Fatalf("SetEnabled failed: %v", err)
+	}
+
+	m := readConfigForTest(t, path)
+	servers := m["projects"].(map[string]interface{})["/proj"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	args := entry["args"].([]interface{})
+	if len(args) != 1 || args[0] != "--custom" {
+		t.Fatalf("expected existing entry untouched (custom args preserved), got %v", entry)
+	}
+}
+
+func TestSetEnabled_Project_Disable_NeverTouchesEntry(t *testing.T) {
+	cat := &catalog.Catalog{Servers: []catalog.Server{{Name: "fs", Command: "fs-server"}}}
+	a, path := newAdapter(t, cat)
+	writeConfig(t, path, `{"projects":{"/proj":{"mcpServers":{"fs":{"command":"fs-server","args":["--custom"]}}}}}`)
+
+	if _, err := a.SetEnabled(projectScope("/proj"), "fs", false); err != nil {
+		t.Fatalf("SetEnabled failed: %v", err)
+	}
+
+	m := readConfigForTest(t, path)
+	servers := m["projects"].(map[string]interface{})["/proj"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	args := entry["args"].([]interface{})
+	if len(args) != 1 || args[0] != "--custom" {
+		t.Fatalf("expected entry untouched by disable, got %v", entry)
+	}
+}
+
+func TestSetEnabled_Project_Enable_UnknownServerErrors_OnlyWhenEntryMissing(t *testing.T) {
+	a, path := newAdapter(t, &catalog.Catalog{})
+	writeConfig(t, path, `{}`)
+
+	if _, err := a.SetEnabled(projectScope("/proj"), "nope", true); err == nil {
+		t.Fatal("expected error for unknown server with no existing entry")
 	}
 }

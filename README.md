@@ -180,8 +180,11 @@ v1 supports Claude Code only, applied to a single file, `~/.claude.json`.
 The enable/disable mechanism differs by scope:
 
 - **Project scope**: toggles the server's name in
-  `projects[<projectRoot>].disabledMcpServers`; the server's own config entry
-  is left untouched.
+  `projects[<projectRoot>].disabledMcpServers`. On enable, if the server has
+  no entry yet at `projects[<projectRoot>].mcpServers`, it's created from the
+  catalog (same stdio/http shape as global); an existing entry is never
+  overwritten. On disable, the entry itself is never touched, created, or
+  deleted — only the array changes.
 - **Global scope**: there is no top-level disabled-array in real Claude Code,
   so disabling removes the server's entry from the top-level `mcpServers`
   map, and enabling re-creates it from the catalog and sweeps the server's

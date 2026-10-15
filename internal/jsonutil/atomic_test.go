@@ -417,3 +417,85 @@ func TestReadNestedMapEntries_MissingAnyLevelReturnsEmpty(t *testing.T) {
 		t.Fatalf("expected empty map, no error for missing innerKey; got %v, %v", entries, err)
 	}
 }
+
+func TestPatchNestedMapEntry_CreatesIntermediateObjects(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	err := PatchNestedMapEntry(path, "projects", "/x", "mcpServers", "fs", map[string]interface{}{"command": "fs-server"})
+	if err != nil {
+		t.Fatalf("PatchNestedMapEntry failed: %v", err)
+	}
+
+	m := readJSON(t, path)
+	projects := m["projects"].(map[string]interface{})
+	proj := projects["/x"].(map[string]interface{})
+	servers := proj["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	if entry["command"] != "fs-server" {
+		t.Fatalf("expected command fs-server, got %v", entry)
+	}
+}
+
+func TestPatchNestedMapEntry_PreservesOtherEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"projects":{"/x":{"mcpServers":{"y":{"command":"y-server"}}}}}`), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+
+	err := PatchNestedMapEntry(path, "projects", "/x", "mcpServers", "z", map[string]interface{}{"command": "z-server"})
+	if err != nil {
+		t.Fatalf("PatchNestedMapEntry failed: %v", err)
+	}
+
+	m := readJSON(t, path)
+	servers := m["projects"].(map[string]interface{})["/x"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	y := servers["y"].(map[string]interface{})
+	if y["command"] != "y-server" {
+		t.Fatalf("expected y entry preserved, got %v", y)
+	}
+	z := servers["z"].(map[string]interface{})
+	if z["command"] != "z-server" {
+		t.Fatalf("expected z entry added, got %v", z)
+	}
+}
+
+func TestPatchNestedMapEntry_DeletesEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"projects":{"/x":{"mcpServers":{"y":{"command":"y-server"},"z":{"command":"z-server"}}}}}`), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+
+	err := PatchNestedMapEntry(path, "projects", "/x", "mcpServers", "z", nil)
+	if err != nil {
+		t.Fatalf("PatchNestedMapEntry failed: %v", err)
+	}
+
+	m := readJSON(t, path)
+	servers := m["projects"].(map[string]interface{})["/x"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	if _, ok := servers["z"]; ok {
+		t.Fatalf("expected z deleted, got %v", servers)
+	}
+	if _, ok := servers["y"]; !ok {
+		t.Fatalf("expected y preserved, got %v", servers)
+	}
+}
+
+func TestPatchNestedMapEntry_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "missing.json")
+
+	err := PatchNestedMapEntry(path, "projects", "/x", "mcpServers", "fs", map[string]interface{}{"command": "fs-server"})
+	if err != nil {
+		t.Fatalf("PatchNestedMapEntry on missing file failed: %v", err)
+	}
+
+	m := readJSON(t, path)
+	servers := m["projects"].(map[string]interface{})["/x"].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	if entry["command"] != "fs-server" {
+		t.Fatalf("expected command fs-server, got %v", entry)
+	}
+}

@@ -85,7 +85,30 @@ func (a *Adapter) setEnabledProject(projectRoot, serverName string, enabled bool
 		}
 		return append(current, serverName)
 	})
-	return 0, err
+	if err != nil {
+		return 0, err
+	}
+	if !enabled {
+		return 0, nil
+	}
+
+	existing, err := jsonutil.ReadNestedMapEntries(a.path, "projects", projectRoot, "mcpServers")
+	if err != nil {
+		return 0, err
+	}
+	if _, ok := existing[serverName]; ok {
+		return 0, nil
+	}
+
+	server, ok := a.cat.FindServer(serverName)
+	if !ok {
+		return 0, fmt.Errorf("unknown server: %s", serverName)
+	}
+	entry := serverToRaw(*server)
+	if err := jsonutil.PatchNestedMapEntry(a.path, "projects", projectRoot, "mcpServers", serverName, entry); err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
 func (a *Adapter) ImportCandidates(sc scope.Scope) ([]catalog.Server, []adapter.ImportConflict, error) {

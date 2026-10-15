@@ -597,3 +597,49 @@ func TestE2E_ActiveProfileState_IsolatedPerProjectRoot(t *testing.T) {
 		t.Fatalf("expected 'work' inactive in project B, got %q", outB)
 	}
 }
+
+func TestE2E_ProjectScope_EnableCreatesEntry_ThenVisibleInClaudeJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
+		Servers: []catalog.Server{{Name: "fs", Command: "fs-server", Args: []string{"--root", "/"}}},
+	})
+
+	if _, err := exec(t, "--project", projectRoot, "server", "enable", "fs"); err != nil {
+		t.Fatalf("server enable failed: %v", err)
+	}
+
+	m := readJSONFile(t, filepath.Join(home, ".claude.json"))
+	projects := m["projects"].(map[string]interface{})
+	proj := projects[projectRoot].(map[string]interface{})
+	servers := proj["mcpServers"].(map[string]interface{})
+	entry, ok := servers["fs"].(map[string]interface{})
+	if !ok || entry["command"] != "fs-server" {
+		t.Fatalf("expected fs entry created from catalog in projects[%s].mcpServers, got %v", projectRoot, servers)
+	}
+}
+
+func TestE2E_ProjectScope_EnableNeverOverwritesExistingEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+	writeCatalogFixture(t, filepath.Join(home, ".config", "mcputils", "servers.yaml"), &catalog.Catalog{
+		Servers:  []catalog.Server{{Name: "fs", Command: "fs-server", Args: []string{"--default"}}},
+		Profiles: []catalog.Profile{{Name: "work", Servers: []string{"fs"}}},
+	})
+	claudePath := filepath.Join(home, ".claude.json")
+	writeRawJSON(t, claudePath, `{"projects":{"`+projectRoot+`":{"mcpServers":{"fs":{"command":"fs-server","args":["--custom"]}}}}}`)
+
+	if _, err := exec(t, "--project", projectRoot, "profile", "enable", "work"); err != nil {
+		t.Fatalf("profile enable failed: %v", err)
+	}
+
+	m := readJSONFile(t, claudePath)
+	servers := m["projects"].(map[string]interface{})[projectRoot].(map[string]interface{})["mcpServers"].(map[string]interface{})
+	entry := servers["fs"].(map[string]interface{})
+	args := entry["args"].([]interface{})
+	if len(args) != 1 || args[0] != "--custom" {
+		t.Fatalf("expected hand-customized entry untouched, got %v", entry)
+	}
+}

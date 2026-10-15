@@ -125,6 +125,34 @@ func PatchMapEntry(path, mapKey, entryKey string, value interface{}) error {
 	return writeMap(path, m)
 }
 
+func PatchNestedMapEntry(path, outerKey, outerSubKey, innerKey, entryKey string, value interface{}) error {
+	m, err := readMap(path)
+	if err != nil {
+		return err
+	}
+	outer, ok := m[outerKey].(map[string]interface{})
+	if !ok {
+		outer = map[string]interface{}{}
+	}
+	sub, ok := outer[outerSubKey].(map[string]interface{})
+	if !ok {
+		sub = map[string]interface{}{}
+	}
+	inner, ok := sub[innerKey].(map[string]interface{})
+	if !ok {
+		inner = map[string]interface{}{}
+	}
+	if value == nil {
+		delete(inner, entryKey)
+	} else {
+		inner[entryKey] = value
+	}
+	sub[innerKey] = inner
+	outer[outerSubKey] = sub
+	m[outerKey] = outer
+	return writeMap(path, m)
+}
+
 func ReadMapEntries(path, mapKey string) (map[string]interface{}, error) {
 	m, err := readMap(path)
 	if err != nil {
