@@ -197,6 +197,17 @@ The client integration lives behind a `ClientAdapter` interface, so other
 clients (Claude Desktop, Cursor, etc.) could be added later without
 reworking the core profile/catalog logic — not implemented in v1.
 
+## Development
+
+Go isn't assumed to be installed on the host — build and test through the
+`go` service in `docker-compose.yml`, which runs `golang:1.23-alpine` with
+the repo mounted at `/app` and cached module/build dirs:
+
+```sh
+docker compose run --rm go go test ./...
+docker compose run --rm go go build ./...
+```
+
 ## Non-goals
 
 - No server process/container lifecycle management — config toggling only.

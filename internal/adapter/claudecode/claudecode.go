@@ -205,11 +205,14 @@ func rawToServer(name string, raw map[string]interface{}) catalog.Server {
 
 func serverToRaw(s catalog.Server) map[string]interface{} {
 	if s.IsHTTP() {
-		return map[string]interface{}{
-			"type":    "http",
-			"url":     s.URL,
-			"headers": s.Headers,
+		out := map[string]interface{}{
+			"type": "http",
+			"url":  s.URL,
 		}
+		if len(s.Headers) > 0 {
+			out["headers"] = s.Headers
+		}
+		return out
 	}
 	return map[string]interface{}{
 		"command": s.Command,
